@@ -1,0 +1,8 @@
+/.work/
+/module-builds/
+/module-release/
+.env
+.env.*
+*.so
+*.key
+*.pem

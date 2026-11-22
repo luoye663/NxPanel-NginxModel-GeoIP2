@@ -1,0 +1,28 @@
+{
+  "geoip2_sha256": "ad72fc23348d715a330994984531fab9b3606e160483236737f9a4a6957d9452",
+  "mmdb_commit": "c454a21f31fd17f2843f16094e9afb3a14a42078",
+  "mmdb_sha256": "fc12d6470b35b70bd3e4534dd433d3e262a6c73f7682f85c344e832d4190f02b",
+  "targets": [
+    {
+      "name": "jammy-openresty-amd64",
+      "builder": "host",
+      "os": "ubuntu:22.04",
+      "arch": "amd64",
+      "runtime": "openresty",
+      "image": "docker.io/library/ubuntu@sha256:f64b2ffc2f10ab8f8505aa56b2664bd846cbb9df87c7e2532e30f7667021c0e6",
+      "package_version": "1.31.1.1-1~jammy1",
+      "runtime_sha256": "65b78baadd3f0984055de89bf13f4a1932e5bfe9c31932037a134ea2b1a0ce42",
+      "binary_sha256": "09aa040d083ce9c12fe0b54a8216b5a6e72a193028884669b1bdd63db3003ded"
+    },
+    {
+      "name": "alpine-nginx-amd64",
+      "builder": "alpine",
+      "os": "alpine:3.21",
+      "arch": "amd64",
+      "runtime": "nginx",
+      "image": "docker.io/library/nginx@sha256:65645c7bb6a0661892a8b03b89d0743208a18dd2f3f17a54ef4b76fb8e2f2a10",
+      "runtime_sha256": "e96acebb9c2a6db8a000c3dd1b32ecba1b810f0cd586232d4d921e376674dd0e",
+      "binary_sha256": "8fb463bd86f010fff0a477f8c938e9f99dba766030e0a493cc4f1ed5167a5f66"
+    }
+  ]
+}

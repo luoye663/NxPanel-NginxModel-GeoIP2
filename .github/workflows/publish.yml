@@ -1,0 +1,217 @@
+name: Publish GeoIP2 module
+
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: New stable release tag, for example v3.4.0
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: geoip2-module-publish
+  cancel-in-progress: false
+
+env:
+  RELEASE_TAG: ${{ inputs.tag }}
+
+jobs:
+  targets:
+    if: github.ref_type == 'branch' && github.ref_name == github.event.repository.default_branch
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    outputs:
+      architectures: ${{ steps.plan.outputs.architectures }}
+      tools_ref: ${{ steps.tools.outputs.ref }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ github.sha }}
+          path: module
+          persist-credentials: false
+      - id: tools
+        name: Read the reviewed NxPanel tools pin
+        run: |
+          set -euo pipefail
+          pin=module/.github/nxpanel-tools.sha
+          if [[ ! -f "$pin" || -L "$pin" ]]; then
+            echo 'Expected a checked-in .github/nxpanel-tools.sha file; use the pinned template from the NxPanel maintainers.' >&2
+            exit 1
+          fi
+          tools_ref=$(<"$pin")
+          if [[ ! "$tools_ref" =~ ^[0-9a-f]{40}$ ]]; then
+            echo '.github/nxpanel-tools.sha must contain one full NxPanel commit SHA.' >&2
+            exit 1
+          fi
+          printf 'ref=%s\n' "$tools_ref" >> "$GITHUB_OUTPUT"
+      - id: plan
+        run: |
+          set -euo pipefail
+          architectures=$(bash module/prepare-release.sh "$GITHUB_WORKSPACE/nxpanel" "$GITHUB_REPOSITORY" "$RELEASE_TAG" targets)
+          printf 'architectures=%s\n' "$architectures" >> "$GITHUB_OUTPUT"
+
+  build:
+    needs: targets
+    strategy:
+      matrix:
+        arch: ${{ fromJSON(needs.targets.outputs.architectures) }}
+    runs-on: ${{ matrix.arch == 'arm64' && 'ubuntu-24.04-arm' || 'ubuntu-24.04' }}
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          path: module
+          persist-credentials: false
+      - uses: actions/checkout@v7
+        with:
+          repository: luoye663/NxPanel
+          ref: ${{ needs.targets.outputs.tools_ref }}
+          path: nxpanel
+          persist-credentials: false
+      - name: Build each runtime for this architecture
+        run: bash module/prepare-release.sh "$GITHUB_WORKSPACE/nxpanel" "$GITHUB_REPOSITORY" "$RELEASE_TAG" build
+      - uses: actions/upload-artifact@v7
+        with:
+          name: geoip2-builds-${{ matrix.arch }}
+          path: module/.work/builds/geoip2/
+          include-hidden-files: true
+          if-no-files-found: error
+
+  bundle:
+    needs: [targets, build]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    outputs:
+      candidate_sha256: ${{ steps.package.outputs.sha256 }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          path: module
+          persist-credentials: false
+      - uses: actions/checkout@v7
+        with:
+          repository: luoye663/NxPanel
+          ref: ${{ needs.targets.outputs.tools_ref }}
+          path: nxpanel
+          persist-credentials: false
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: nxpanel/go.mod
+          cache: false
+      - uses: actions/download-artifact@v8
+        with:
+          pattern: geoip2-builds-*
+          path: module/.work/builds/geoip2
+          merge-multiple: true
+      - id: package
+        run: |
+          set -euo pipefail
+          bash module/prepare-release.sh "$GITHUB_WORKSPACE/nxpanel" "$GITHUB_REPOSITORY" "$RELEASE_TAG" bundle
+          digest=$(sha256sum < module/.work/bundle/candidate.json)
+          printf 'sha256=%s\n' "${digest%% *}" >> "$GITHUB_OUTPUT"
+      - uses: actions/upload-artifact@v7
+        with:
+          name: geoip2-bundle
+          path: module/.work/bundle/
+          include-hidden-files: true
+          if-no-files-found: error
+
+  verify:
+    needs: [targets, bundle]
+    strategy:
+      matrix:
+        arch: ${{ fromJSON(needs.targets.outputs.architectures) }}
+    runs-on: ${{ matrix.arch == 'arm64' && 'ubuntu-24.04-arm' || 'ubuntu-24.04' }}
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          path: module
+          persist-credentials: false
+      - uses: actions/checkout@v7
+        with:
+          repository: luoye663/NxPanel
+          ref: ${{ needs.targets.outputs.tools_ref }}
+          path: nxpanel
+          persist-credentials: false
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: nxpanel/go.mod
+          cache: false
+      - uses: actions/download-artifact@v8
+        with:
+          name: geoip2-bundle
+          path: module/.work/bundle
+      - name: Test installation and removal of the packaged bytes
+        env:
+          CANDIDATE_SHA: ${{ needs.bundle.outputs.candidate_sha256 }}
+        run: |
+          set -euo pipefail
+          [[ "$CANDIDATE_SHA" =~ ^[0-9a-f]{64}$ ]]
+          printf '%s  module/.work/bundle/candidate.json\n' "$CANDIDATE_SHA" | sha256sum -c
+          bash module/prepare-release.sh "$GITHUB_WORKSPACE/nxpanel" "$GITHUB_REPOSITORY" "$RELEASE_TAG" verify
+
+  sign-and-publish:
+    needs: [targets, bundle, verify]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    environment: module-release-signing
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          repository: luoye663/NxPanel
+          ref: ${{ needs.targets.outputs.tools_ref }}
+          path: nxpanel
+          persist-credentials: false
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: nxpanel/go.mod
+          cache: false
+      - uses: actions/download-artifact@v8
+        with:
+          name: geoip2-bundle
+          path: .work/bundle
+      - name: Sign only the tested bundle
+        env:
+          CANDIDATE_SHA: ${{ needs.bundle.outputs.candidate_sha256 }}
+          NXPANEL_MODULE_RELEASE_TRUST_KEYS: ${{ vars.NXPANEL_MODULE_RELEASE_TRUST_KEYS }}
+          NXPANEL_MODULE_RELEASE_SIGNING_KEYS: ${{ secrets.NXPANEL_MODULE_RELEASE_SIGNING_KEYS }}
+        run: |
+          set -euo pipefail
+          bundle=$GITHUB_WORKSPACE/.work/bundle
+          [[ "$CANDIDATE_SHA" =~ ^[0-9a-f]{64}$ ]]
+          printf '%s  %s\n' "$CANDIDATE_SHA" "$bundle/candidate.json" | sha256sum -c
+          jq -e --arg repo "$GITHUB_REPOSITORY" --arg tag "$RELEASE_TAG" \
+            '.modules[0].id == "geoip2" and .modules[0].release == {repository:$repo,tag:$tag}' "$bundle/candidate.json" >/dev/null
+          go -C nxpanel run ./cmd/nxpanel-module-catalog -candidate -input "$bundle" -output "$bundle"
+      - name: Publish a new Release without overwriting assets
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          bundle=$GITHUB_WORKSPACE/.work/bundle
+          [[ "$RELEASE_TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ && "$GITHUB_SHA" =~ ^[0-9a-f]{40}$ ]]
+          manifest=$bundle/module-release.json
+          names=$(jq -er '[.module.install.name,.module.uninstall.name] + ([.assets[].name] | unique) | .[]' "$manifest")
+          assets=("$manifest" "$bundle/module-release.sig.json")
+          while IFS= read -r name; do
+            [[ "$name" =~ ^geoip2(-(un)?install)?-[0-9a-f]{64}\.(sh|so)$ && -f "$bundle/$name" ]]
+            assets+=("$bundle/$name")
+          done <<< "$names"
+          [[ -s "${assets[1]}" ]]
+          notes=$(jq -er '["Verified runtime targets:", ""] + [.assets[].target | "- \(.os) / \(.arch) / \(.runtime) \(.runtime_version) — `\(.binary_sha256)`"] | join("\n")' "$manifest")
+          release_tags=$(gh api --paginate "repos/$GITHUB_REPOSITORY/releases?per_page=100" --jq '.[].tag_name')
+          if grep -Fxq -- "$RELEASE_TAG" <<< "$release_tags"; then
+            echo "Release tag already has a published or draft Release: $RELEASE_TAG" >&2
+            exit 1
+          fi
+          gh api --method POST "repos/$GITHUB_REPOSITORY/git/refs" --silent \
+            -f "ref=refs/tags/$RELEASE_TAG" -f "sha=$GITHUB_SHA"
+          gh release create "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" --draft --verify-tag \
+            --title "GeoIP2 $RELEASE_TAG" --notes "$notes" "${assets[@]}"
+          gh release edit "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" --draft=false --latest
