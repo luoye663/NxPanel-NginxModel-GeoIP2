@@ -50,7 +50,7 @@ jobs:
       - id: plan
         run: |
           set -euo pipefail
-          architectures=$(bash module/prepare-release.sh "$GITHUB_WORKSPACE/nxpanel" "$GITHUB_REPOSITORY" "$RELEASE_TAG" targets)
+          architectures=$(bash module/prepare-release.sh - "$GITHUB_REPOSITORY" "$RELEASE_TAG" targets)
           printf 'architectures=%s\n' "$architectures" >> "$GITHUB_OUTPUT"
 
   build:
@@ -65,14 +65,8 @@ jobs:
         with:
           path: module
           persist-credentials: false
-      - uses: actions/checkout@v7
-        with:
-          repository: luoye663/NxPanel
-          ref: ${{ needs.targets.outputs.tools_ref }}
-          path: nxpanel
-          persist-credentials: false
       - name: Build each runtime for this architecture
-        run: bash module/prepare-release.sh "$GITHUB_WORKSPACE/nxpanel" "$GITHUB_REPOSITORY" "$RELEASE_TAG" build
+        run: bash module/prepare-release.sh - "$GITHUB_REPOSITORY" "$RELEASE_TAG" build
       - uses: actions/upload-artifact@v7
         with:
           name: geoip2-builds-${{ matrix.arch }}

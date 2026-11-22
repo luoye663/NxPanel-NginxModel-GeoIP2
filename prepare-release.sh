@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-nxpanel=${1:?Specify the NxPanel checkout}
+nxpanel=${1:?Specify the NxPanel checkout, or - for targets and build}
 repository=${2:?Specify the GitHub module repository (owner/repo)}
 tag=${3:?Specify a new release tag (vMAJOR.MINOR.PATCH)}
 stage=${4:-all}
@@ -40,17 +40,26 @@ if [[ "$stage" == targets ]]; then
     jq -cer '[.targets[].arch] | unique' "$config"
     exit 0
 fi
-case "$stage" in all|build|bundle|verify) ;; *) die "Unknown stage: $stage" ;; esac
-nxpanel=$(cd -- "$nxpanel" && pwd -P)
-[[ -f "$nxpanel/go.mod" ]] || die "Missing NxPanel checkout: $nxpanel"
-work=${MODULE_WORK_DIR:-$root/.work}
+case "$stage" in all|build|bundle|verify|local-host) ;; *) die "Unknown stage: $stage" ;; esac
+if [[ "$stage" != build ]]; then
+    [[ -f "$nxpanel/go.mod" ]] || die "Missing NxPanel checkout: $nxpanel"
+    nxpanel=$(cd -- "$nxpanel" && pwd -P)
+fi
+arch=
+if [[ "$stage" != bundle ]]; then
+    case "$(uname -m)" in x86_64) arch=amd64 ;; aarch64|arm64) arch=arm64 ;; *) die 'Unsupported build architecture' ;; esac
+fi
+if [[ "$stage" == local-host ]]; then
+    selected=$(bash "$root/modules/geoip2/local-host-target.sh" "$config" "$arch" "${MODULE_NGINX_BIN:?Supply an absolute Nginx binary path}")
+    work=${MODULE_WORK_DIR:-$root/.work/local-host}
+else
+    selected=$(jq -ce --arg arch "$arch" '.targets[] | select($arch == "" or .arch == $arch)' "$config") || die "No targets for ${arch:-any architecture}"
+    work=${MODULE_WORK_DIR:-$root/.work}
+fi
 mkdir -p -- "$work"
 work=$(cd -- "$work" && pwd -P)
 builds=$work/builds
 bundle=$work/bundle
-if [[ "$stage" != bundle ]]; then
-    case "$(uname -m)" in x86_64) arch=amd64 ;; aarch64|arm64) arch=arm64 ;; *) die 'Unsupported build architecture' ;; esac
-fi
 geoip_sha=$(jq -er '.geoip2_sha256' "$config")
 mmdb_commit=$(jq -er '.mmdb_commit' "$config")
 mmdb_sha=$(jq -er '.mmdb_sha256' "$config")
@@ -63,8 +72,6 @@ cleanup() {
     rm -rf -- "$scratch"
 }
 trap cleanup EXIT
-
-targets() { jq -ce --arg arch "$1" '.targets[] | select($arch == "" or .arch == $arch)' "$config"; }
 
 read_target() {
     IFS=$'\t' read -r name builder target_arch runtime image runtime_sha <<< "$(jq -er '[.name,.builder,.arch,.runtime,.image,.runtime_sha256] | @tsv' <<< "$1")"
@@ -80,10 +87,14 @@ run_target() {
     local operation=$1 output=$2 container verifier entrypoint script
     local -a args=() options=(--platform "linux/$target_arch" --user 0:0)
     if [[ "$operation" == verify ]]; then args+=(--runtime-only); fi
+    if [[ "$stage" == local-host && "${MODULE_BUILD_USE_PROXY:-0}" == 1 ]]; then
+        export http_proxy=${http_proxy:-${HTTP_PROXY:-}} https_proxy=${https_proxy:-${HTTPS_PROXY:-}} no_proxy=${no_proxy:-${NO_PROXY:-}}
+        options+=(--env http_proxy --env https_proxy --env no_proxy)
+    fi
     case "$builder" in
         host)
             entrypoint=/bin/bash
-            script=$nxpanel/scripts/build-host-geoip2.sh
+            script=$root/modules/geoip2/build-host.sh
             args+=("$runtime" "$package" "$runtime_sha" "$geoip_sha" "$mmdb_commit" "$mmdb_sha" /out "$expected") ;;
         alpine)
             entrypoint=/bin/sh
@@ -120,8 +131,7 @@ check_build() {
 }
 
 build() {
-    local selected recipe output
-    selected=$(targets "$arch") || die "No build targets for $arch"
+    local recipe output
     while IFS= read -r recipe; do
         read_target "$recipe"
         output=$builds/geoip2/$name
@@ -133,10 +143,9 @@ build() {
 }
 
 pack() {
-    local selected recipe output
+    local recipe output
     local -A expected_dirs=()
     [[ ! -e "$bundle" ]] || die "Choose a new work directory: $bundle already exists"
-    selected=$(targets "$1") || die 'No targets to package'
     while IFS= read -r recipe; do
         read_target "$recipe"
         output=$builds/geoip2/$name
@@ -155,9 +164,8 @@ pack() {
 }
 
 verify() {
-    local selected recipe verifiers
+    local recipe verifiers
     [[ -s "$bundle/candidate.json" ]] || die "Missing release bundle: $bundle"
-    selected=$(targets "$arch") || die "No verification targets for $arch"
     while IFS= read -r recipe; do
         read_target "$recipe"
         run_target verify ''
@@ -168,8 +176,8 @@ verify() {
 }
 
 case "$stage" in
-    all) build; pack "$arch" ;;
+    all|local-host) build; pack ;;
     build) build ;;
-    bundle) pack '' ;;
+    bundle) pack ;;
     verify) verify ;;
 esac
