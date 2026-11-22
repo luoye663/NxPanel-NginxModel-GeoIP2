@@ -38,6 +38,13 @@ go run ./cmd/nxpanel-update-package -keygen "$HOME/nxpanel-geoip2-release-key" -
 
 </details>
 
+## 环境变量配置
+
+1. 在 NxPanel-NginxModel-GeoIP2 仓库打开 Settings → Secrets and variables → Actions → Variables，创建或修正 Repository variable NXPANEL_MODULE_RELEASE_TRUST_KEYS。
+2. 值填现有 GeoIP2 密钥对中 trust.pub 的完整一行，格式为 key-id:BASE64，包含冒号和尾部的 =（如有）。不要填文件路径、只填 Base64，或把公钥建成 Secret。主仓库的 NXPANEL_MODULE_TRUST_KEYS 也不能替代这个变量。
+3. 私钥保持在模块仓库 Settings → Environments → module-release-signing 的 Secret NXPANEL_MODULE_RELEASE_SIGNING_KEYS 中，必须来自同一对密钥的 signing.key。已有配对密钥就不需要重新生成。
+4. 保存后发起 Publish GeoIP2 module。
+
 ## 本地编译与验证
 
 依赖 Docker、Bash、`jq` 和 NxPanel `go.mod` 所需的 Go 版本。在本仓库根目录运行：

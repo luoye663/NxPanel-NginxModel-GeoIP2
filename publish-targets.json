@@ -15,6 +15,61 @@
       "binary_sha256": "09aa040d083ce9c12fe0b54a8216b5a6e72a193028884669b1bdd63db3003ded"
     },
     {
+      "name": "trixie-nginx-amd64",
+      "builder": "host",
+      "os": "debian:13",
+      "arch": "amd64",
+      "runtime": "nginx",
+      "image": "docker.io/library/debian@sha256:9c6e381421d0f48d1b8133e573f33c185ee16cbf505eda9c4a8a4791b25ea8a6",
+      "package_version": "1.30.7-1~trixie",
+      "runtime_sha256": "2565b5c837050e958f70fb0f73c48e2bca4542ad349fd356f46fb0c72610bc6e",
+      "binary_sha256": "763633a49c493d112d60f0cd647f58f581cf94ebd8f9f1ace285c11eef0dfe51"
+    },
+    {
+      "name": "noble-nginx-amd64",
+      "builder": "host",
+      "os": "ubuntu:24.04",
+      "arch": "amd64",
+      "runtime": "nginx",
+      "image": "docker.io/library/ubuntu@sha256:9c7f200c07e3d4a03e7249d2c16bf66a51120fb876aa2242cf31451412543289",
+      "package_version": "1.30.7-1~noble",
+      "runtime_sha256": "2565b5c837050e958f70fb0f73c48e2bca4542ad349fd356f46fb0c72610bc6e",
+      "binary_sha256": "33ab095b1d7ac7c037dee6274d22aa6de7a8d19e3a653bd83265d690ea057a71"
+    },
+    {
+      "name": "noble-openresty-amd64",
+      "builder": "host",
+      "os": "ubuntu:24.04",
+      "arch": "amd64",
+      "runtime": "openresty",
+      "image": "docker.io/library/ubuntu@sha256:9c7f200c07e3d4a03e7249d2c16bf66a51120fb876aa2242cf31451412543289",
+      "package_version": "1.31.8.1-1~noble1",
+      "runtime_sha256": "b569c63b420f80a4ac8466f2deffe73ed93ab760026532e039c3658409a997f4",
+      "binary_sha256": "251b770df9ab20a41290747965242ce635c89f48b5d257309ad7918898fc80a7"
+    },
+    {
+      "name": "rocky9-nginx-amd64",
+      "builder": "host",
+      "os": "rocky:9",
+      "arch": "amd64",
+      "runtime": "nginx",
+      "image": "docker.io/rockylinux/rockylinux@sha256:8101994123cf3d0a8fee517bee7f39e555c7d92bd2d9eb3303cc988a0eeed00f",
+      "package_version": "2:1.30.7-1.el9.ngx",
+      "runtime_sha256": "2565b5c837050e958f70fb0f73c48e2bca4542ad349fd356f46fb0c72610bc6e",
+      "binary_sha256": "272528ffbd9f4cd6a51d1b23a0b1f4217cdaa25a9b3053e0aca59b94abf4af58"
+    },
+    {
+      "name": "rocky9-openresty-amd64",
+      "builder": "host",
+      "os": "rocky:9",
+      "arch": "amd64",
+      "runtime": "openresty",
+      "image": "docker.io/rockylinux/rockylinux@sha256:8101994123cf3d0a8fee517bee7f39e555c7d92bd2d9eb3303cc988a0eeed00f",
+      "package_version": "0:1.31.8.1-1.el9",
+      "runtime_sha256": "b569c63b420f80a4ac8466f2deffe73ed93ab760026532e039c3658409a997f4",
+      "binary_sha256": "070a6453ec04f97875099b0ab94b659a492d083a99e6f3503beaab2df5871819"
+    },
+    {
       "name": "alpine-nginx-amd64",
       "builder": "alpine",
       "os": "alpine:3.21",

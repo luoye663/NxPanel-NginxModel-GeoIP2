@@ -3,7 +3,14 @@ set -eu
 umask 077
 NXMODULE_COMMON_LOADED=1
 
-digest() { sha256sum < "$1" | awk '{ print $1 }'; }
+digest() (
+    if [ "$1" != - ]; then exec < "$1" || exit 1; fi
+    checksum=$(sha256sum) || exit 1
+    printf '%s\n' "${checksum%% *}"
+)
+same_content() (
+    first_hash=$(digest "$1") && second_hash=$(digest "$2") && [ "$first_hash" = "$second_hash" ]
+)
 fail() { printf '%s\n' "$*" >&2; exit 10; }
 start_time() { sed 's/^.*) //' "/proc/$1/stat" 2>/dev/null | awk '{ print $20 }'; }
 same_master() {
@@ -56,10 +63,10 @@ replace_checked() {
     replacing=$1
     expected=$2
     replacement=$3
-    safe_file "$replacing" && cmp -s "$replacing" "$expected" || return 1
+    safe_file "$replacing" && same_content "$replacing" "$expected" || return 1
     transient=$(mktemp "$(dirname "$replacing")/.nxmodule.XXXXXX") || return 1
     if copy_attributes "$replacing" "$transient" && cat "$replacement" > "$transient" &&
-        safe_file "$replacing" && cmp -s "$replacing" "$expected" && mv -f "$transient" "$replacing"; then
+        safe_file "$replacing" && same_content "$replacing" "$expected" && mv -f "$transient" "$replacing"; then
         return 0
     fi
     rm -f "$transient"
@@ -112,7 +119,7 @@ finish() {
     if [ "$main_changed" = 1 ]; then replace_checked "$NXMODULE_CONF" "$candidate" "$original" || restored=0; fi
     if [ "$fragment_changed" = 1 ]; then
         if [ "$NXMODULE_ACTION" = install ]; then
-            safe_file "$NXMODULE_FRAGMENT" && cmp -s "$NXMODULE_FRAGMENT" "$fragment_candidate" && rm "$NXMODULE_FRAGMENT" || restored=0
+            safe_file "$NXMODULE_FRAGMENT" && same_content "$NXMODULE_FRAGMENT" "$fragment_candidate" && rm "$NXMODULE_FRAGMENT" || restored=0
         else
             install_private "$NXMODULE_FRAGMENT" "$fragment_original" || restored=0
         fi
@@ -136,14 +143,14 @@ install_module() {
     [ "${NXMODULE_ACTION:-}" = install ] || fail 'Wrong module action.'
     begin_operation "$@"
     prepare_install || fail 'Module trial did not pass.'
-    same_master && [ "$(digest "$NXMODULE_NGINX")" = "$NXMODULE_BIN_SHA256" ] && cmp -s "$original" "$NXMODULE_CONF" || fail 'Nginx has changed during preparation.'
+    same_master && [ "$(digest "$NXMODULE_NGINX")" = "$NXMODULE_BIN_SHA256" ] && same_content "$original" "$NXMODULE_CONF" || fail 'Nginx has changed during preparation.'
     mkdir -p "$(dirname "$NXMODULE_DEST")" "$(dirname "$NXMODULE_FRAGMENT")"
     if missing "$NXMODULE_DEST"; then
         install_private "$NXMODULE_DEST" "$NXMODULE_ASSET" || fail 'Could not stage module.'
     else
-        safe_file "$NXMODULE_DEST" && cmp -s "$NXMODULE_DEST" "$NXMODULE_ASSET" || fail 'Module cache differs from the signed asset.'
+        safe_file "$NXMODULE_DEST" && same_content "$NXMODULE_DEST" "$NXMODULE_ASSET" || fail 'Module cache differs from the signed asset.'
     fi
-    if ! head -n 2 "$original" | cmp -s - "$NXMODULE_WORK/include.conf"; then
+    if ! head -n 2 "$original" | same_content - "$NXMODULE_WORK/include.conf"; then
         if grep -Fxq '# NXPANEL-MANAGED-MODULES' "$original"; then fail 'Unexpected module include marker.'; fi
         cat "$NXMODULE_WORK/include.conf" "$original" > "$candidate"
     fi
@@ -160,7 +167,7 @@ uninstall_module() {
     [ "${NXMODULE_ACTION:-}" = uninstall ] || fail 'Wrong module action.'
     begin_operation "$@"
     prepare_uninstall || fail 'Module configuration has been modified or cannot be retired.'
-    safe_file "$NXMODULE_FRAGMENT" && cmp -s "$NXMODULE_FRAGMENT" "$fragment_candidate" || fail 'Module load file has changed.'
+    safe_file "$NXMODULE_FRAGMENT" && same_content "$NXMODULE_FRAGMENT" "$fragment_candidate" || fail 'Module load file has changed.'
     cp "$NXMODULE_FRAGMENT" "$fragment_original"
     rm "$NXMODULE_FRAGMENT"
     fragment_changed=1
